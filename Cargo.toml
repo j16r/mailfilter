@@ -5,5 +5,9 @@ authors = ["John Barker <dev@j16r.net>"]
 edition = "2018"
 
 [dependencies]
+clap = "2.33"
 mailbox = { path = "../rust-mailbox" }
+nom = "5.0"
 regex = "1.0.1"
+regex-syntax = "*"
+yz-nomstr = "0.3.0"
