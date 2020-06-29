@@ -144,6 +144,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "mailbox",
+ "mime",
  "nom",
  "regex",
  "regex-syntax",

@@ -10,6 +10,7 @@ use regex_syntax::Parser;
 use yz_nomstr::parse_string;
 
 use crate::Header;
+use crate::Mail;
 
 #[derive(Debug)]
 pub enum ValueMatcher {
@@ -48,18 +49,27 @@ pub struct Matcher {
 }
 
 impl Matcher {
-    pub fn matches(&self, header: &Header) -> bool {
+    pub fn includes_header(&self, header: &Header) -> bool {
+        println!("Matcher.includes_header({:?})", &header);
+        println!("{:?} = {:?}", &*header.key(), self.key);
         &*header.key() == self.key
-            && match self.value_matcher {
-                ValueMatcher::StartsWith(ref beginning) => header.value().starts_with(beginning),
-                ValueMatcher::EndsWith(ref end) => header.value().ends_with(end),
-                ValueMatcher::Exact(ref string) => &*header.value() == string,
-                ValueMatcher::Regex(ref matching_regex) => matching_regex.is_match(&header.value()),
-                ValueMatcher::NotEqual(ref string) => &*header.value() != string,
-                ValueMatcher::NotRegex(ref matching_regex) => {
-                    !matching_regex.is_match(&header.value())
+    }
+
+    pub fn matches(&self, mail: &Mail) -> bool {
+        mail.headers.iter().all(|header| -> bool {
+            println!("all header {:?}", header);
+            &*header.key() == self.key
+                && match self.value_matcher {
+                    ValueMatcher::StartsWith(ref beginning) => header.value().starts_with(beginning),
+                    ValueMatcher::EndsWith(ref end) => header.value().ends_with(end),
+                    ValueMatcher::Exact(ref string) => &*header.value() == string,
+                    ValueMatcher::Regex(ref matching_regex) => matching_regex.is_match(&header.value()),
+                    ValueMatcher::NotEqual(ref string) => &*header.value() != string,
+                    ValueMatcher::NotRegex(ref matching_regex) => {
+                        !matching_regex.is_match(&header.value())
+                    }
                 }
-            }
+        })
     }
 }
 
@@ -71,8 +81,22 @@ pub enum Expression {
 }
 
 impl Expression {
-    pub fn matches(&self, header: &Header) -> bool {
-        true
+    // detect if any part of the expression mentions this header
+    pub fn includes_header(&self, header: &Header) -> bool {
+        println!("Expression.includes_header({:?})", &header);
+        match self {
+            Expression::Matcher(ref matcher) => matcher.includes_header(header),
+            Expression::Or(ref matcher, ref expression) => matcher.includes_header(header) || expression.includes_header(header),
+            Expression::And(ref matcher, ref expression) => matcher.includes_header(header) || expression.includes_header(header),
+        }
+    }
+
+    pub fn matches(&self, header: &Mail) -> bool {
+        match self {
+            Expression::Matcher(ref matcher) => matcher.matches(header),
+            Expression::Or(ref matcher, ref expression) => matcher.matches(header) || expression.matches(header),
+            Expression::And(ref matcher, ref expression) => matcher.matches(header) && expression.matches(header),
+        }
     }
 }
 
@@ -82,11 +106,14 @@ pub struct Filter {
 }
 
 impl Filter {
-    pub fn matches(&self, header: &Header) -> bool {
-        if let Some(ref expr) = self.expression {
-            return expr.matches(header);
-        }
-        true
+    // detect if this header is mentioned at all in the filter
+    pub fn includes_header(&self, header: &Header) -> bool {
+        self.expression.as_ref().map(|ref e| e.includes_header(header)).unwrap_or(true)
+    }
+
+    // detect if this mail matches the filter
+    pub fn matches(&self, mail: &Mail) -> bool {
+        self.expression.as_ref().map(|ref e| e.matches(mail)).unwrap_or(true)
     }
 }
 
@@ -105,11 +132,13 @@ fn expression(input: &str) -> IResult<&str, Expression> {
 }
 
 fn match_expression(input: &str) -> IResult<&str, Expression> {
+    println!("match_expression({:?})", input);
     let (input, matcher) = matcher(input)?;
     Ok((input, Expression::Matcher(matcher)))
 }
 
 fn or_expression(input: &str) -> IResult<&str, Expression> {
+    println!("or_expression({:?})", input);
     let (input, (matcher, _, _, _, right_expression)) = tuple((
         matcher,
         multispace1,
@@ -132,6 +161,7 @@ fn and_expression(input: &str) -> IResult<&str, Expression> {
 }
 
 fn matcher(input: &str) -> IResult<&str, Matcher> {
+    println!("matcher({:?})", input);
     let (input, (key, value_matcher)) = tuple((key, value_matcher))(input)?;
     Ok((
         input,
@@ -143,18 +173,19 @@ fn matcher(input: &str) -> IResult<&str, Matcher> {
 }
 
 fn value_matcher(input: &str) -> IResult<&str, ValueMatcher> {
+    println!("value_matcher({:?})", input);
     let (input, (operator, argument)) = alt((
         tuple((tag("=~"), regex)),
         tuple((tag("!~"), regex)),
-        tuple((tag("=^"), literal)),
-        tuple((tag("=$"), literal)),
+        tuple((tag("^="), literal)),
+        tuple((tag("$="), literal)),
         tuple((tag("!="), literal)),
         tuple((tag("="), literal)),
     ))(input)?;
     let matcher = match operator {
         "=" => ValueMatcher::Exact(argument.to_string()),
-        "=^" => ValueMatcher::StartsWith(argument.to_string()),
-        "=$" => ValueMatcher::EndsWith(argument.to_string()),
+        "^=" => ValueMatcher::StartsWith(argument.to_string()),
+        "$=" => ValueMatcher::EndsWith(argument.to_string()),
         "!=" => ValueMatcher::NotEqual(argument.to_string()),
         "=~" => {
             let regex = Regex::new(&argument).unwrap();
@@ -210,6 +241,21 @@ fn is_printable(ch: char) -> bool {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_includes_header() {
+        let (_, program) = parse("From=One").unwrap();
+        let envelope = Mail::parse(r#"From 1@mail Fri Jun 05 23:22:35 +0000 2020
+From: One <1@mail>
+
+
+"#).unwrap();
+
+        assert!(program.includes_header(&envelope.headers[0]));
+
+        let (_, non_matching_program) = parse("subject=Hello").unwrap();
+        assert!(!non_matching_program.includes_header(&envelope.headers[0]));
+    }
 
     #[test]
     fn test_parse_single_matcher() {
