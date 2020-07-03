@@ -42,8 +42,6 @@ fn main() {
                 _ => Filter { expression: None },
             };
 
-            println!("Using program to filter mail: {:?}", program);
-
             if let Err(e) = extract(path, &program) {
                 eprintln!("{:?}", e);
             }
@@ -63,12 +61,10 @@ fn extract(path: &str, filter: &Filter) -> Result<(), std::io::Error> {
         match entry {
             Ok(Entry::Begin(_, _)) => {
                 mail = Some(Mail::new());
-            },
+            }
             Ok(Entry::Header(ref header)) if filter.includes_header(header) => {
-                println!("Header matched {:?}", header);
                 if let Some(ref mut m) = mail {
                     m.headers.push(header.clone());
-                    println!("Envelope matched {:?}", m);
                 }
             }
             Ok(Entry::Body(body)) => {
@@ -80,23 +76,9 @@ fn extract(path: &str, filter: &Filter) -> Result<(), std::io::Error> {
             Ok(Entry::End) => {
                 if let Some(ref mut m) = mail {
                     if filter.matches(m) {
-                        println!("Envelope matched {:?}", m);
+                        println!("matched: {:?}", m);
                     }
                 }
-
-                //if let Some(ref mut f) = file {
-                    ////println!("{:?}", header.value());
-
-                    ////let subject = &header.value();
-                    ////let name = envelope_filename(subject);
-                    ////let path = format!("{}.txt", &name);
-                    ////file = Some(File::create(&path)?);
-                    ////
-                    //f.write_all(b"\n")?;
-                    //f.sync_all()?;
-                    //file = None;
-                    //std::process::exit(0);
-                //}
             }
             _ => {}
         }

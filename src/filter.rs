@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+
+use mime::Mime;
 use nom::branch::alt;
 use nom::bytes::complete::{escaped, tag, tag_no_case, take_while};
 use nom::character::complete::{alphanumeric1, char, multispace1, none_of, one_of};
@@ -42,34 +45,108 @@ impl PartialEq for ValueMatcher {
 
 impl Eq for ValueMatcher {}
 
+impl ValueMatcher {
+    pub fn matches(&self, value: &str) -> bool {
+        match self {
+            ValueMatcher::StartsWith(ref beginning) => dbg!(value.starts_with(beginning)),
+            ValueMatcher::EndsWith(ref end) => dbg!(value.ends_with(end)),
+            ValueMatcher::Exact(ref string) => dbg!(value == string),
+            ValueMatcher::Regex(ref matching_regex) => {
+                dbg!(matching_regex);
+                dbg!(value);
+                dbg!(matching_regex.is_match(value))
+            },
+            ValueMatcher::NotEqual(ref string) => dbg!(value != string),
+            ValueMatcher::NotRegex(ref matching_regex) => dbg!(!matching_regex.is_match(value)),
+        }
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+enum MatcherKey {
+    BodyMatcher(Mime),
+    HeaderMatcher(String),
+}
+
+impl MatcherKey {
+    fn new(input: &str) -> Result<MatcherKey, mime::FromStrError> {
+        let body_matcher = Regex::new(r"^body(?:[.](.*))?$").unwrap();
+        if let Some(captures) = body_matcher.captures(&input) {
+            dbg!(&captures);
+            dbg!(&captures[0]);
+            if captures.len() == 1 {
+                return Ok(MatcherKey::BodyMatcher(
+                    captures[1].parse::<Mime>().unwrap(),
+                ));
+            } else {
+                return Ok(MatcherKey::BodyMatcher(
+                    "text/plain".parse::<Mime>().unwrap(),
+                ));
+            }
+        }
+        Ok(MatcherKey::HeaderMatcher(input.to_string()))
+    }
+
+    fn is_header(&self, header: &Header) -> bool {
+        if let MatcherKey::HeaderMatcher(ref key) = self {
+            return header.key().eq_ignore_ascii_case(&key);
+        }
+        false
+    }
+
+    fn get_matching_body(&self, body: &HashMap<Mime, Vec<u8>>) -> Option<String> {
+        if let MatcherKey::BodyMatcher(ref mime_type) = self {
+            for (key, value) in body.iter() {
+                if mime_type.essence_str() == key.essence_str() {
+                    println!("matching essence str: {:?}", mime_type);
+                    return Some(std::str::from_utf8(value).unwrap().to_string());
+                }
+            }
+        }
+        None
+    }
+}
+
 #[derive(Debug, Eq, PartialEq)]
 pub struct Matcher {
-    key: String,
+    key: MatcherKey,
     value_matcher: ValueMatcher,
 }
 
 impl Matcher {
     pub fn includes_header(&self, header: &Header) -> bool {
-        println!("Matcher.includes_header({:?})", &header);
-        println!("{:?} = {:?}", &*header.key(), self.key);
-        &*header.key() == self.key
+        self.key.is_header(header)
     }
 
     pub fn matches(&self, mail: &Mail) -> bool {
-        mail.headers.iter().all(|header| -> bool {
-            println!("all header {:?}", header);
-            &*header.key() == self.key
-                && match self.value_matcher {
-                    ValueMatcher::StartsWith(ref beginning) => header.value().starts_with(beginning),
-                    ValueMatcher::EndsWith(ref end) => header.value().ends_with(end),
-                    ValueMatcher::Exact(ref string) => &*header.value() == string,
-                    ValueMatcher::Regex(ref matching_regex) => matching_regex.is_match(&header.value()),
-                    ValueMatcher::NotEqual(ref string) => &*header.value() != string,
-                    ValueMatcher::NotRegex(ref matching_regex) => {
-                        !matching_regex.is_match(&header.value())
-                    }
-                }
-        })
+        match self.key {
+            MatcherKey::BodyMatcher(ref mime_type) => self.matches_body(&mime_type, &mail.body),
+            MatcherKey::HeaderMatcher(_) => self.matches_header(&mail.headers),
+        }
+    }
+
+    fn matches_body(&self, mime_type: &Mime, body: &HashMap<Mime, Vec<u8>>) -> bool {
+        println!("matches_body({:?}) ~= {:?}", mime_type, body);
+        if let Some(body_text) = self.key.get_matching_body(body) {
+            println!("found body with expected mime_type {:?}", body_text);
+            return self.value_matcher.matches(&body_text);
+        }
+        false
+    }
+
+    fn matches_header(&self, headers: &Vec<Header>) -> bool {
+        println!("matches_header({:?})", self.key);
+        !headers.is_empty()
+            && headers
+                .iter()
+                .filter(|header| -> bool { self.key.is_header(&header) })
+                .any(|header| -> bool {
+                    println!(
+                        "found header name matching, checking value: {:?}",
+                        &header.value()
+                    );
+                    self.value_matcher.matches(&*header.value())
+                })
     }
 }
 
@@ -83,19 +160,26 @@ pub enum Expression {
 impl Expression {
     // detect if any part of the expression mentions this header
     pub fn includes_header(&self, header: &Header) -> bool {
-        println!("Expression.includes_header({:?})", &header);
         match self {
             Expression::Matcher(ref matcher) => matcher.includes_header(header),
-            Expression::Or(ref matcher, ref expression) => matcher.includes_header(header) || expression.includes_header(header),
-            Expression::And(ref matcher, ref expression) => matcher.includes_header(header) || expression.includes_header(header),
+            Expression::Or(ref matcher, ref expression) => {
+                matcher.includes_header(header) || expression.includes_header(header)
+            }
+            Expression::And(ref matcher, ref expression) => {
+                matcher.includes_header(header) || expression.includes_header(header)
+            }
         }
     }
 
     pub fn matches(&self, header: &Mail) -> bool {
         match self {
             Expression::Matcher(ref matcher) => matcher.matches(header),
-            Expression::Or(ref matcher, ref expression) => matcher.matches(header) || expression.matches(header),
-            Expression::And(ref matcher, ref expression) => matcher.matches(header) && expression.matches(header),
+            Expression::Or(ref matcher, ref expression) => {
+                matcher.matches(header) || expression.matches(header)
+            }
+            Expression::And(ref matcher, ref expression) => {
+                matcher.matches(header) && expression.matches(header)
+            }
         }
     }
 }
@@ -108,12 +192,18 @@ pub struct Filter {
 impl Filter {
     // detect if this header is mentioned at all in the filter
     pub fn includes_header(&self, header: &Header) -> bool {
-        self.expression.as_ref().map(|ref e| e.includes_header(header)).unwrap_or(true)
+        self.expression
+            .as_ref()
+            .map(|ref e| e.includes_header(header))
+            .unwrap_or(true)
     }
 
     // detect if this mail matches the filter
     pub fn matches(&self, mail: &Mail) -> bool {
-        self.expression.as_ref().map(|ref e| e.matches(mail)).unwrap_or(true)
+        self.expression
+            .as_ref()
+            .map(|ref e| e.matches(mail))
+            .unwrap_or(false)
     }
 }
 
@@ -132,13 +222,11 @@ fn expression(input: &str) -> IResult<&str, Expression> {
 }
 
 fn match_expression(input: &str) -> IResult<&str, Expression> {
-    println!("match_expression({:?})", input);
     let (input, matcher) = matcher(input)?;
     Ok((input, Expression::Matcher(matcher)))
 }
 
 fn or_expression(input: &str) -> IResult<&str, Expression> {
-    println!("or_expression({:?})", input);
     let (input, (matcher, _, _, _, right_expression)) = tuple((
         matcher,
         multispace1,
@@ -161,19 +249,17 @@ fn and_expression(input: &str) -> IResult<&str, Expression> {
 }
 
 fn matcher(input: &str) -> IResult<&str, Matcher> {
-    println!("matcher({:?})", input);
     let (input, (key, value_matcher)) = tuple((key, value_matcher))(input)?;
     Ok((
         input,
         Matcher {
-            key: key.to_string(),
+            key: MatcherKey::new(key).unwrap(),
             value_matcher,
         },
     ))
 }
 
 fn value_matcher(input: &str) -> IResult<&str, ValueMatcher> {
-    println!("value_matcher({:?})", input);
     let (input, (operator, argument)) = alt((
         tuple((tag("=~"), regex)),
         tuple((tag("!~"), regex)),
@@ -243,18 +329,61 @@ mod test {
     use super::*;
 
     #[test]
+    fn test_example() {
+        let (_, program) =
+            parse("subject=~/check off$/ or body=~/body/").unwrap();
+        let envelope = Mail::parse(
+            r#"From 1@mail Fri Jun 05 23:22:35 +0000 2020
+From: A Person <me@readme.com>
+Subject: Items to check off
+To: You <you@readme.com>
+Content-Type: multipart/alternative; boundary="0000000000006e22da05a4839fb9"
+
+--0000000000006e22da05a4839fb9
+Content-Type: text/plain; charset="UTF-8"
+
+Email body goes here.
+--0000000000006e22da05a4839fb9
+Content-Type: text/html; charset="UTF-8"
+Content-Transfer-Encoding: quoted-printable
+
+<div>Hello!</div>
+--0000000000006e22da05a4839fb9
+
+"#,
+        )
+        .unwrap();
+
+        assert!(program.matches(&envelope));
+    }
+
+    #[test]
     fn test_includes_header() {
         let (_, program) = parse("From=One").unwrap();
-        let envelope = Mail::parse(r#"From 1@mail Fri Jun 05 23:22:35 +0000 2020
+        let envelope = Mail::parse(
+            r#"From 1@mail Fri Jun 05 23:22:35 +0000 2020
 From: One <1@mail>
 
 
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         assert!(program.includes_header(&envelope.headers[0]));
 
         let (_, non_matching_program) = parse("subject=Hello").unwrap();
         assert!(!non_matching_program.includes_header(&envelope.headers[0]));
+    }
+
+    #[test]
+    fn test_includes_header_empty_email_fails_match() {
+        let envelope = Mail::new();
+
+        let (_, program) = parse("From=One").unwrap();
+        assert!(!program.matches(&envelope));
+
+        let (_, program) = parse("From=One and subject=dude").unwrap();
+        assert!(!program.matches(&envelope));
     }
 
     #[test]
@@ -265,7 +394,7 @@ From: One <1@mail>
                 "",
                 Filter {
                     expression: Some(Expression::Matcher(Matcher {
-                        key: "subject".to_string(),
+                        key: MatcherKey::new("subject").unwrap(),
                         value_matcher: ValueMatcher::Exact("hello".to_string()),
                     }))
                 }
@@ -281,7 +410,7 @@ From: One <1@mail>
                 "",
                 Filter {
                     expression: Some(Expression::Matcher(Matcher {
-                        key: "subject".to_string(),
+                        key: MatcherKey::new("subject").unwrap(),
                         value_matcher: ValueMatcher::Regex(Regex::new("^hello$").unwrap()),
                     }))
                 }
@@ -298,13 +427,13 @@ From: One <1@mail>
                 Filter {
                     expression: Some(Expression::Or(
                         Matcher {
-                            key: "subject".to_string(),
+                            key: MatcherKey::new("subject").unwrap(),
                             value_matcher: ValueMatcher::Regex(
                                 Regex::new("this / then that").unwrap()
                             ),
                         },
                         Box::new(Expression::Matcher(Matcher {
-                            key: "body".to_string(),
+                            key: MatcherKey::new("body").unwrap(),
                             value_matcher: ValueMatcher::StartsWith("Dear".to_string()),
                         })),
                     ),)
