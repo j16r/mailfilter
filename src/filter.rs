@@ -48,16 +48,12 @@ impl Eq for ValueMatcher {}
 impl ValueMatcher {
     pub fn matches(&self, value: &str) -> bool {
         match self {
-            ValueMatcher::StartsWith(ref beginning) => dbg!(value.starts_with(beginning)),
-            ValueMatcher::EndsWith(ref end) => dbg!(value.ends_with(end)),
-            ValueMatcher::Exact(ref string) => dbg!(value == string),
-            ValueMatcher::Regex(ref matching_regex) => {
-                dbg!(matching_regex);
-                dbg!(value);
-                dbg!(matching_regex.is_match(value))
-            },
-            ValueMatcher::NotEqual(ref string) => dbg!(value != string),
-            ValueMatcher::NotRegex(ref matching_regex) => dbg!(!matching_regex.is_match(value)),
+            ValueMatcher::StartsWith(ref beginning) => value.starts_with(beginning),
+            ValueMatcher::EndsWith(ref end) => value.ends_with(end),
+            ValueMatcher::Exact(ref string) => value == string,
+            ValueMatcher::Regex(ref matching_regex) => matching_regex.is_match(value),
+            ValueMatcher::NotEqual(ref string) => value != string,
+            ValueMatcher::NotRegex(ref matching_regex) => !matching_regex.is_match(value),
         }
     }
 }
@@ -72,8 +68,6 @@ impl MatcherKey {
     fn new(input: &str) -> Result<MatcherKey, mime::FromStrError> {
         let body_matcher = Regex::new(r"^body(?:[.](.*))?$").unwrap();
         if let Some(captures) = body_matcher.captures(&input) {
-            dbg!(&captures);
-            dbg!(&captures[0]);
             if captures.len() == 1 {
                 return Ok(MatcherKey::BodyMatcher(
                     captures[1].parse::<Mime>().unwrap(),
@@ -98,7 +92,6 @@ impl MatcherKey {
         if let MatcherKey::BodyMatcher(ref mime_type) = self {
             for (key, value) in body.iter() {
                 if mime_type.essence_str() == key.essence_str() {
-                    println!("matching essence str: {:?}", mime_type);
                     return Some(std::str::from_utf8(value).unwrap().to_string());
                 }
             }
@@ -126,25 +119,18 @@ impl Matcher {
     }
 
     fn matches_body(&self, mime_type: &Mime, body: &HashMap<Mime, Vec<u8>>) -> bool {
-        println!("matches_body({:?}) ~= {:?}", mime_type, body);
         if let Some(body_text) = self.key.get_matching_body(body) {
-            println!("found body with expected mime_type {:?}", body_text);
             return self.value_matcher.matches(&body_text);
         }
         false
     }
 
     fn matches_header(&self, headers: &Vec<Header>) -> bool {
-        println!("matches_header({:?})", self.key);
         !headers.is_empty()
             && headers
                 .iter()
                 .filter(|header| -> bool { self.key.is_header(&header) })
                 .any(|header| -> bool {
-                    println!(
-                        "found header name matching, checking value: {:?}",
-                        &header.value()
-                    );
                     self.value_matcher.matches(&*header.value())
                 })
     }

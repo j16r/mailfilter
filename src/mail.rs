@@ -13,10 +13,107 @@ pub struct Mail {
     pub boundary: String,
 }
 
+impl Mail {
+    pub fn body_text(&self) -> String {
+        for (key, value) in self.body.iter() {
+            if mime::TEXT_PLAIN.essence_str() == key.essence_str() {
+                return std::str::from_utf8(value).unwrap().to_string();
+            }
+        }
+        "".to_string()
+    }
+
+    pub fn subject(&self) -> String {
+        for header in self.headers.iter() {
+            if &*header.key() == "Subject" {
+                return header.value().to_string();
+            }
+        }
+        "".to_string()
+    }
+}
+
 #[derive(Debug, Eq, PartialEq)]
 pub struct ContentTypeHeader {
     pub mime_type: Mime,
     pub boundary: String,
+}
+
+#[derive(Default)]
+pub struct Context {
+    mail: Option<Mail>,
+    reading_headers: bool,
+    reading_body: bool,
+    current_body: Option<Mime>,
+}
+
+impl Context {
+    pub fn new() -> Context {
+        Context{..Context::default()}
+    }
+
+    pub fn begin(&mut self) {
+        self.mail = Some(Mail::new());
+    }
+
+    pub fn end(&mut self) -> Option<Mail> {
+       self.mail.take()
+    }
+
+    pub fn header(&mut self, header: &Header) {
+        if let Some(ref mut m) = self.mail {
+            if &*header.key() == "Content-Type" {
+                if let Ok(content_type) = (&*header.value()).parse::<Mime>() {
+                    if let Some(ref boundary) = content_type.get_param(mime::BOUNDARY) {
+                        m.boundary = format!("--{}", boundary.as_str().to_string());
+                    }
+                }
+            } else {
+            }
+            m.headers.push(header.clone());
+        }
+    }
+
+    pub fn body(&mut self, body: &Vec<u8>) {
+        if let Some(ref mut m) = self.mail {
+            if m.boundary == "" {
+                let payload = m.body.entry(mime::TEXT_PLAIN).or_insert(Vec::new());
+                payload.extend(body.iter());
+                payload.extend(b"\n");
+            } else {
+                let body_string = std::str::from_utf8(&body).unwrap();
+                if self.reading_body {
+                    if body_string == m.boundary {
+                        self.reading_body = false;
+                    } else if let Some(ref mime_type) = self.current_body {
+                        let payload =
+                            m.body.entry(mime_type.clone()).or_insert(Vec::new());
+                        payload.extend(body.iter());
+                        payload.extend(b"\n");
+                    }
+                }
+
+                if self.reading_headers {
+                    if body_string == "" {
+                        self.reading_headers = false;
+                        self.reading_body = true;
+                    } else {
+                        if let Ok(header) = Header::new(body_string) {
+                            if &*header.key() == "Content-Type" {
+                                let mime_type = (&*header.value()).parse::<Mime>().unwrap();
+                                m.body.entry(mime_type.clone()).or_insert(Vec::new());
+                                self.current_body = Some(mime_type.clone());
+                            }
+                        }
+                    }
+                } else if m.boundary == body_string {
+                    self.reading_headers = true;
+                    self.reading_body = false;
+                }
+            }
+        }
+    }
+
 }
 
 impl Mail {
@@ -28,74 +125,23 @@ impl Mail {
         }
     }
 
+    #[cfg(test)]
     pub fn parse(input: &str) -> Result<Mail, std::io::Error> {
-        let mut mail: Option<Mail> = None;
-        let mut reading_headers = false;
-        let mut reading_body = false;
-        let mut current_body: Option<Mime> = None;
+        let mut ctx = Context::new();
 
         for entry in mailbox::stream::entries(std::io::Cursor::new(input)) {
             match entry {
                 Ok(Entry::Begin(_, _)) => {
-                    mail = Some(Mail::new());
-                }
-                Ok(Entry::Header(ref header)) if &*header.key() == "Content-Type" => {
-                    let content_type = (&*header.value()).parse::<Mime>().unwrap();
-                    if let Some(ref mut m) = mail {
-                        m.boundary = format!(
-                            "--{}",
-                            content_type
-                                .get_param(mime::BOUNDARY)
-                                .unwrap()
-                                .as_str()
-                                .to_string()
-                        );
-                        m.headers.push(header.clone());
-                    }
+                    ctx.begin();
                 }
                 Ok(Entry::Header(ref header)) => {
-                    if let Some(ref mut m) = mail {
-                        m.headers.push(header.clone());
-                    }
+                    ctx.header(header);
                 }
-                Ok(Entry::Body(body)) => {
-                    let body_string = std::str::from_utf8(&body).unwrap();
-                    if let Some(ref mut m) = mail {
-                        if m.boundary == "" {
-                            let payload = m.body.entry(mime::TEXT_PLAIN).or_insert(Vec::new());
-                            payload.extend(body.iter());
-                        } else {
-                            if reading_body {
-                                if body_string == m.boundary {
-                                    reading_body = false;
-                                } else if let Some(ref mime_type) = current_body {
-                                    let payload =
-                                        m.body.entry(mime_type.clone()).or_insert(Vec::new());
-                                    payload.extend(body.iter());
-                                }
-                            }
-
-                            if reading_headers {
-                                if body_string == "" {
-                                    reading_headers = false;
-                                    reading_body = true;
-                                } else {
-                                    let header = Header::new(body_string).unwrap();
-                                    if &*header.key() == "Content-Type" {
-                                        let mime_type = (&*header.value()).parse::<Mime>().unwrap();
-                                        m.body.entry(mime_type.clone()).or_insert(Vec::new());
-                                        current_body = Some(mime_type.clone());
-                                    }
-                                }
-                            } else if m.boundary == body_string {
-                                reading_headers = true;
-                                reading_body = false;
-                            }
-                        }
-                    }
+                Ok(Entry::Body(ref body)) => {
+                    ctx.body(body);
                 }
                 Ok(Entry::End) => {
-                    if let Some(m) = mail {
+                    if let Some(m) = ctx.end() {
                         return Ok(m);
                     }
                 }
@@ -149,9 +195,6 @@ This is an email
         assert_eq!(&*envelope.headers[1].key(), "Content-Type");
         assert_eq!(envelope.body.keys().len(), 1);
         let body = envelope.body.get(&mime::TEXT_PLAIN).unwrap();
-        assert_eq!(
-            std::str::from_utf8(body).unwrap(),
-            "This is an email".to_string()
-        );
+        assert_eq!(body, b"This is an email");
     }
 }

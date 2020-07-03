@@ -19,7 +19,7 @@ use mailbox::stream::Entry;
 use regex::Regex;
 
 use filter::Filter;
-use mail::Mail;
+use mail::{Context, Mail};
 
 fn main() {
     let matches = App::new("Mailfilter")
@@ -35,14 +35,19 @@ fn main() {
 
     if let Some(command) = matches.subcommand_matches("extract") {
         if let Some(path) = command.value_of("file") {
-            eprintln!("extracting bodies from {}", path);
+            eprint!("Extracting envelopes...\nInput:\t{}", path);
 
-            let program = match command.value_of("filter") {
-                Some(filter) => filter::parse(filter).unwrap().1,
+            let filter = match command.value_of("filter") {
+                Some(filter) => {
+                    eprintln!("\nFilter:\t{}", filter);
+                    filter::parse(filter).unwrap().1
+                }
                 _ => Filter { expression: None },
             };
 
-            if let Err(e) = extract(path, &program) {
+            eprintln!("");
+
+            if let Err(e) = extract(path, &filter) {
                 eprintln!("{:?}", e);
             }
         } else {
@@ -54,29 +59,28 @@ fn main() {
 }
 
 fn extract(path: &str, filter: &Filter) -> Result<(), std::io::Error> {
-    let mut file: Option<File> = None;
-    let mut mail: Option<Mail> = None;
+    let mut ctx = Context::new();
 
     for entry in mailbox::stream::entries(File::open(path)?) {
         match entry {
             Ok(Entry::Begin(_, _)) => {
-                mail = Some(Mail::new());
+                ctx.begin();
             }
-            Ok(Entry::Header(ref header)) if filter.includes_header(header) => {
-                if let Some(ref mut m) = mail {
-                    m.headers.push(header.clone());
-                }
+            Ok(Entry::Header(ref header)) => {
+                ctx.header(header);
             }
             Ok(Entry::Body(body)) => {
-                if let Some(ref mut f) = file {
-                    f.write_all(&body)?;
-                    f.write_all(b"\n")?;
-                }
+                ctx.body(&body);
             }
             Ok(Entry::End) => {
-                if let Some(ref mut m) = mail {
+                if let Some(ref m) = ctx.end() {
                     if filter.matches(m) {
-                        println!("matched: {:?}", m);
+                        let subject = m.subject();
+                        let name = envelope_filename(&subject);
+                        let path = format!("{}.txt", &name);
+                        let mut file = File::create(&path).unwrap();
+                        let body_text = m.body_text();
+                        file.write_all(&body_text.into_bytes()).unwrap();
                     }
                 }
             }
