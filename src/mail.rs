@@ -31,6 +31,18 @@ impl Mail {
         }
         "".to_string()
     }
+
+    pub fn date(&self) -> String {
+        for header in self.headers.iter() {
+            if &*header.key() == "Date" {
+                if let Ok(date) = chrono::DateTime::parse_from_rfc2822(&header.value()) { // , "%Y-%m-%d") {
+                    return date.format("%Y%m%dT%H%M%S").to_string()
+                }
+                return header.value().to_string();
+            }
+        }
+        "".to_string()
+    }
 }
 
 #[derive(Debug, Eq, PartialEq)]

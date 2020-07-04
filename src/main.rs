@@ -1,3 +1,4 @@
+extern crate chrono;
 extern crate clap;
 extern crate mailbox;
 extern crate mime;
@@ -75,9 +76,12 @@ fn extract(path: &str, filter: &Filter) -> Result<(), std::io::Error> {
             Ok(Entry::End) => {
                 if let Some(ref m) = ctx.end() {
                     if filter.matches(m) {
+                        let date = m.date();
                         let subject = m.subject();
-                        let name = envelope_filename(&subject);
+                        let base_name = format!("{}-{}", date, subject);
+                        let name = envelope_filename(&base_name);
                         let path = format!("{}.txt", &name);
+                        eprintln!("Saving email to {}", path);
                         let mut file = File::create(&path).unwrap();
                         let body_text = m.body_text();
                         file.write_all(&body_text.into_bytes()).unwrap();
