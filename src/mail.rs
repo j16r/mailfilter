@@ -207,6 +207,6 @@ This is an email
         assert_eq!(&*envelope.headers[1].key(), "Content-Type");
         assert_eq!(envelope.body.keys().len(), 1);
         let body = envelope.body.get(&mime::TEXT_PLAIN).unwrap();
-        assert_eq!(body, b"This is an email");
+        assert_eq!(body, b"This is an email\n");
     }
 }
