@@ -97,5 +97,18 @@ fn extract(path: &str, filter: &Filter) -> Result<(), std::io::Error> {
 
 fn envelope_filename<'a>(path: &'a str) -> Cow<'a, str> {
     let filename_regex = Regex::new(r"[^A-Za-z0-9]+").unwrap();
-    filename_regex.replace_all(path, "_")
+    let sanitized_path = filename_regex.replace_all(path, "_");
+    if sanitized_path.len() > 251 {
+        return Cow::Owned(sanitized_path.get(..251).unwrap().into());
+    }
+    sanitized_path
+}
+
+#[test]
+fn test_envelope_filename() {
+    assert_eq!(envelope_filename(""), "");
+    assert_eq!(envelope_filename("!@#!##!@#"), "_");
+    assert_eq!(envelope_filename("hello!@#!##!@#world"), "hello_world");
+    let long_filename : String = (0..=256).map(|_| 'A').collect::<String>();
+    assert_eq!(envelope_filename(&long_filename), "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 }
