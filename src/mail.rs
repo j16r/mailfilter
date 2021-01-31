@@ -112,9 +112,12 @@ impl Context {
                     } else {
                         if let Ok(header) = Header::new(body_string) {
                             if &*header.key() == "Content-Type" {
-                                let mime_type = (&*header.value()).parse::<Mime>().unwrap();
-                                m.body.entry(mime_type.clone()).or_insert(Vec::new());
-                                self.current_body = Some(mime_type.clone());
+                                if let Ok(mime_type) = (&*header.value()).parse::<Mime>() {
+                                    m.body.entry(mime_type.clone()).or_insert(Vec::new());
+                                    self.current_body = Some(mime_type.clone());
+                                } else {
+                                    eprintln!("Unrecognized mime type: {}", &*header.value());
+                                }
                             }
                         }
                     }
