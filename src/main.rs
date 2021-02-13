@@ -107,7 +107,7 @@ fn envelope_filename<'a>(path: &'a str) -> Cow<'a, str> {
 #[test]
 fn test_envelope_filename() {
     assert_eq!(envelope_filename(""), "");
-    assert_eq!(envelope_filename("!@#!##!@#"), "_");
+    assert_eq!(envelope_filename("!@#!##!@#"), "");
     assert_eq!(envelope_filename("hello!@#!##!@#world"), "hello_world");
     assert_eq!(envelope_filename("hello!@#!##!@#world###"), "hello_world");
     let long_filename : String = (0..=256).map(|_| 'A').collect::<String>();

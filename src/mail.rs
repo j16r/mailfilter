@@ -3,6 +3,7 @@ use std::io::{Error, ErrorKind};
 
 use mailbox::stream::Entry;
 use mime::Mime;
+use thiserror::Error;
 
 use crate::Header;
 
@@ -45,6 +46,25 @@ impl Mail {
     }
 }
 
+#[derive(Error, Debug)]
+pub enum ContentTypeError {
+    #[error(transparent)]
+    TypeError(#[from] mime::FromStrError),
+    #[error("failed to parse Content-type header")]
+    ValueError,
+}
+
+fn parse_content_type_header(header_value: &str) -> Result<Mime, ContentTypeError> {
+    if let Ok(mime_type) = header_value.parse::<Mime>() {
+        return Ok(mime_type);
+    }
+    // Fallback, eliminate anything after the first ';'
+    match header_value.split(";").collect::<Vec<_>>()[..] {
+        [parts, ..] => return Ok(parts.parse::<Mime>()?),
+        _ => Err(ContentTypeError::ValueError)
+    }
+}
+
 #[derive(Debug, Eq, PartialEq)]
 pub struct ContentTypeHeader {
     pub mime_type: Mime,
@@ -75,7 +95,7 @@ impl Context {
     pub fn header(&mut self, header: &Header) {
         if let Some(ref mut m) = self.mail {
             if &*header.key() == "Content-Type" {
-                if let Ok(content_type) = (&*header.value()).parse::<Mime>() {
+                if let Ok(content_type) = parse_content_type_header(&*header.value()) {
                     if let Some(ref boundary) = content_type.get_param(mime::BOUNDARY) {
                         m.boundary = format!("--{}", boundary.as_str().to_string());
                     }
@@ -112,7 +132,7 @@ impl Context {
                     } else {
                         if let Ok(header) = Header::new(body_string) {
                             if &*header.key() == "Content-Type" {
-                                if let Ok(mime_type) = (&*header.value()).parse::<Mime>() {
+                                if let Ok(mime_type) = parse_content_type_header(&*header.value()) {
                                     m.body.entry(mime_type.clone()).or_insert(Vec::new());
                                     self.current_body = Some(mime_type.clone());
                                 } else {
@@ -140,7 +160,6 @@ impl Mail {
         }
     }
 
-    #[cfg(test)]
     pub fn parse(input: &str) -> Result<Mail, std::io::Error> {
         let mut ctx = Context::new();
 
@@ -211,5 +230,13 @@ This is an email
         assert_eq!(envelope.body.keys().len(), 1);
         let body = envelope.body.get(&mime::TEXT_PLAIN).unwrap();
         assert_eq!(body, b"This is an email\n");
+    }
+
+    #[test]
+    fn test_parse_content_type_header() {
+        assert_eq!(parse_content_type_header("text/html").unwrap(), mime::TEXT_HTML);
+        assert_eq!(parse_content_type_header("text/html; garbage").unwrap(), mime::TEXT_HTML);
+        let multipart = parse_content_type_header(r#"multipart/alternative; boundary="--_NmP-d4c3c3eca06b99af-Part_1""#).unwrap();
+        assert_eq!(multipart.get_param(mime::BOUNDARY).unwrap(), "--_NmP-d4c3c3eca06b99af-Part_1");
     }
 }
