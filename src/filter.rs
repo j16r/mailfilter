@@ -189,7 +189,7 @@ impl Filter {
         self.expression
             .as_ref()
             .map(|ref e| e.matches(mail))
-            .unwrap_or(false)
+            .unwrap_or(true)
     }
 }
 
@@ -335,6 +335,21 @@ Content-Transfer-Encoding: quoted-printable
 
 <div>Hello!</div>
 --0000000000006e22da05a4839fb9
+
+"#,
+        )
+        .unwrap();
+
+        assert!(program.matches(&envelope));
+    }
+
+    #[test]
+    fn test_empty_program_returns_all_envelopes() {
+        let program = Filter{expression: None};
+        let envelope = Mail::parse(
+            r#"From 1@mail Fri Jun 05 23:22:35 +0000 2020
+From: One <1@mail>
+
 
 "#,
         )

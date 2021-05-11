@@ -60,6 +60,7 @@ fn parse_content_type_header(header_value: &str) -> Result<Mime, ContentTypeErro
     }
     // Fallback, eliminate anything after the first ';'
     match header_value.split(";").collect::<Vec<_>>()[..] {
+        [parts, ..] if parts == "text" => return Ok(mime::TEXT_PLAIN),
         [parts, ..] => return Ok(parts.parse::<Mime>()?),
         _ => Err(ContentTypeError::ValueError)
     }
@@ -236,6 +237,7 @@ This is an email
     fn test_parse_content_type_header() {
         assert_eq!(parse_content_type_header("text/html").unwrap(), mime::TEXT_HTML);
         assert_eq!(parse_content_type_header("text/html; garbage").unwrap(), mime::TEXT_HTML);
+        assert_eq!(parse_content_type_header("text").unwrap(), mime::TEXT_PLAIN);
         let multipart = parse_content_type_header(r#"multipart/alternative; boundary="--_NmP-d4c3c3eca06b99af-Part_1""#).unwrap();
         assert_eq!(multipart.get_param(mime::BOUNDARY).unwrap(), "--_NmP-d4c3c3eca06b99af-Part_1");
     }
