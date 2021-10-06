@@ -67,7 +67,7 @@ enum MatcherKey {
 impl MatcherKey {
     fn new(input: &str) -> Result<MatcherKey, mime::FromStrError> {
         let body_matcher = Regex::new(r"^body(?:[.](.*))?$").unwrap();
-        if let Some(captures) = body_matcher.captures(&input) {
+        if let Some(captures) = body_matcher.captures(input) {
             if captures.len() == 1 {
                 return Ok(MatcherKey::BodyMatcher(
                     captures[1].parse::<Mime>().unwrap(),
@@ -83,7 +83,7 @@ impl MatcherKey {
 
     fn is_header(&self, header: &Header) -> bool {
         if let MatcherKey::HeaderMatcher(ref key) = self {
-            return header.key().eq_ignore_ascii_case(&key);
+            return header.key().eq_ignore_ascii_case(key);
         }
         false
     }
@@ -113,23 +113,23 @@ impl Matcher {
 
     pub fn matches(&self, mail: &Mail) -> bool {
         match self.key {
-            MatcherKey::BodyMatcher(ref mime_type) => self.matches_body(&mime_type, &mail.body),
+            MatcherKey::BodyMatcher(ref mime_type) => self.matches_body(mime_type, &mail.body),
             MatcherKey::HeaderMatcher(_) => self.matches_header(&mail.headers),
         }
     }
 
-    fn matches_body(&self, mime_type: &Mime, body: &HashMap<Mime, Vec<u8>>) -> bool {
+    fn matches_body(&self, _mime_type: &Mime, body: &HashMap<Mime, Vec<u8>>) -> bool {
         if let Some(body_text) = self.key.get_matching_body(body) {
             return self.value_matcher.matches(&body_text);
         }
         false
     }
 
-    fn matches_header(&self, headers: &Vec<Header>) -> bool {
+    fn matches_header(&self, headers: &[Header]) -> bool {
         !headers.is_empty()
             && headers
                 .iter()
-                .filter(|header| -> bool { self.key.is_header(&header) })
+                .filter(|header| -> bool { self.key.is_header(header) })
                 .any(|header| -> bool { self.value_matcher.matches(&*header.value()) })
     }
 }
@@ -178,7 +178,7 @@ impl Filter {
     pub fn includes_header(&self, header: &Header) -> bool {
         self.expression
             .as_ref()
-            .map(|ref e| e.includes_header(header))
+            .map(|e| e.includes_header(header))
             .unwrap_or(true)
     }
 
@@ -186,7 +186,7 @@ impl Filter {
     pub fn matches(&self, mail: &Mail) -> bool {
         self.expression
             .as_ref()
-            .map(|ref e| e.matches(mail))
+            .map(|e| e.matches(mail))
             .unwrap_or(true)
     }
 }
@@ -253,10 +253,10 @@ fn value_matcher(input: &str) -> IResult<&str, ValueMatcher> {
         tuple((tag("="), literal)),
     ))(input)?;
     let matcher = match operator {
-        "=" => ValueMatcher::Exact(argument.to_string()),
-        "^=" => ValueMatcher::StartsWith(argument.to_string()),
-        "$=" => ValueMatcher::EndsWith(argument.to_string()),
-        "!=" => ValueMatcher::NotEqual(argument.to_string()),
+        "=" => ValueMatcher::Exact(argument),
+        "^=" => ValueMatcher::StartsWith(argument),
+        "$=" => ValueMatcher::EndsWith(argument),
+        "!=" => ValueMatcher::NotEqual(argument),
         "=~" => {
             let regex = Regex::new(&argument).unwrap();
             ValueMatcher::Regex(regex)
@@ -297,7 +297,7 @@ fn parse_regex(input: &str) -> IResult<&str, String> {
 
 fn regex(input: &str) -> IResult<&str, String> {
     let (input, regex) = delimited(char('/'), parse_regex, char('/'))(input)?;
-    Ok((input, regex.to_string()))
+    Ok((input, regex))
 }
 
 fn key(input: &str) -> IResult<&str, &str> {

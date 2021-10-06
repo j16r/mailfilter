@@ -46,7 +46,7 @@ fn main() {
                 _ => Filter { expression: None },
             };
 
-            eprintln!("");
+            eprintln!();
 
             if let Err(e) = extract(path, &filter) {
                 eprintln!("{:?}", e);
@@ -95,11 +95,11 @@ fn extract(path: &str, filter: &Filter) -> Result<(), std::io::Error> {
     Ok(())
 }
 
-fn envelope_filename<'a>(path: &'a str) -> Cow<'a, str> {
+fn envelope_filename(path: &str) -> Cow<str> {
     let filename_regex = Regex::new(r"[^A-Za-z0-9]+").unwrap();
     let sanitized_path = filename_regex
         .replace_all(path, "_")
-        .trim_end_matches("_")
+        .trim_end_matches('_')
         .to_string();
     if sanitized_path.len() > 251 {
         return Cow::Owned(sanitized_path.get(..251).unwrap().into());

@@ -60,9 +60,9 @@ fn parse_content_type_header(header_value: &str) -> Result<Mime, ContentTypeErro
         return Ok(mime_type);
     }
     // Fallback, eliminate anything after the first ';'
-    match header_value.split(";").collect::<Vec<_>>()[..] {
-        [parts, ..] if parts == "text" => return Ok(mime::TEXT_PLAIN),
-        [parts, ..] => return Ok(parts.parse::<Mime>()?),
+    match header_value.split(';').collect::<Vec<_>>()[..] {
+        [parts, ..] if parts == "text" => Ok(mime::TEXT_PLAIN),
+        [parts, ..] => Ok(parts.parse::<Mime>()?),
         _ => Err(ContentTypeError::ValueError),
     }
 }
@@ -110,37 +110,35 @@ impl Context {
         }
     }
 
-    pub fn body(&mut self, body: &Vec<u8>) {
+    pub fn body(&mut self, body: &[u8]) {
         if let Some(ref mut m) = self.mail {
-            if m.boundary == "" {
-                let payload = m.body.entry(mime::TEXT_PLAIN).or_insert(Vec::new());
+            if m.boundary.is_empty() {
+                let payload = m.body.entry(mime::TEXT_PLAIN).or_insert_with(Vec::new);
                 payload.extend(body.iter());
                 payload.extend(b"\n");
             } else {
-                let body_string = std::str::from_utf8(&body).unwrap();
+                let body_string = std::str::from_utf8(body).unwrap();
                 if self.reading_body {
                     if body_string == m.boundary {
                         self.reading_body = false;
                     } else if let Some(ref mime_type) = self.current_body {
-                        let payload = m.body.entry(mime_type.clone()).or_insert(Vec::new());
+                        let payload = m.body.entry(mime_type.clone()).or_insert_with(Vec::new);
                         payload.extend(body.iter());
                         payload.extend(b"\n");
                     }
                 }
 
                 if self.reading_headers {
-                    if body_string == "" {
+                    if body_string.is_empty() {
                         self.reading_headers = false;
                         self.reading_body = true;
-                    } else {
-                        if let Ok(header) = Header::new(body_string) {
-                            if &*header.key() == "Content-Type" {
-                                if let Ok(mime_type) = parse_content_type_header(&*header.value()) {
-                                    m.body.entry(mime_type.clone()).or_insert(Vec::new());
-                                    self.current_body = Some(mime_type.clone());
-                                } else {
-                                    eprintln!("Unrecognized mime type: {}", &*header.value());
-                                }
+                    } else if let Ok(header) = Header::new(body_string) {
+                        if &*header.key() == "Content-Type" {
+                            if let Ok(mime_type) = parse_content_type_header(&*header.value()) {
+                                m.body.entry(mime_type.clone()).or_insert_with(Vec::new);
+                                self.current_body = Some(mime_type);
+                            } else {
+                                eprintln!("Unrecognized mime type: {}", &*header.value());
                             }
                         }
                     }
@@ -196,7 +194,7 @@ impl Mail {
 mod test {
     use super::*;
 
-    static EMAIL: &'static str = r#"From 1@mail Fri Jun 05 23:22:35 +0000 2020
+    static EMAIL: &str = r#"From 1@mail Fri Jun 05 23:22:35 +0000 2020
 From: One <1@mail>
 Content-Type: multipart/alternative;
  boundary="--_NmP-d4c3c3eca06b99af-Part_1"
