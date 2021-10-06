@@ -36,8 +36,9 @@ impl Mail {
     pub fn date(&self) -> String {
         for header in self.headers.iter() {
             if &*header.key() == "Date" {
-                if let Ok(date) = chrono::DateTime::parse_from_rfc2822(&header.value()) { // , "%Y-%m-%d") {
-                    return date.format("%Y%m%dT%H%M%S").to_string()
+                if let Ok(date) = chrono::DateTime::parse_from_rfc2822(&header.value()) {
+                    // , "%Y-%m-%d") {
+                    return date.format("%Y%m%dT%H%M%S").to_string();
                 }
                 return header.value().to_string();
             }
@@ -62,7 +63,7 @@ fn parse_content_type_header(header_value: &str) -> Result<Mime, ContentTypeErro
     match header_value.split(";").collect::<Vec<_>>()[..] {
         [parts, ..] if parts == "text" => return Ok(mime::TEXT_PLAIN),
         [parts, ..] => return Ok(parts.parse::<Mime>()?),
-        _ => Err(ContentTypeError::ValueError)
+        _ => Err(ContentTypeError::ValueError),
     }
 }
 
@@ -82,7 +83,9 @@ pub struct Context {
 
 impl Context {
     pub fn new() -> Context {
-        Context{..Context::default()}
+        Context {
+            ..Context::default()
+        }
     }
 
     pub fn begin(&mut self) {
@@ -90,7 +93,7 @@ impl Context {
     }
 
     pub fn end(&mut self) -> Option<Mail> {
-       self.mail.take()
+        self.mail.take()
     }
 
     pub fn header(&mut self, header: &Header) {
@@ -119,8 +122,7 @@ impl Context {
                     if body_string == m.boundary {
                         self.reading_body = false;
                     } else if let Some(ref mime_type) = self.current_body {
-                        let payload =
-                            m.body.entry(mime_type.clone()).or_insert(Vec::new());
+                        let payload = m.body.entry(mime_type.clone()).or_insert(Vec::new());
                         payload.extend(body.iter());
                         payload.extend(b"\n");
                     }
@@ -149,7 +151,6 @@ impl Context {
             }
         }
     }
-
 }
 
 impl Mail {
@@ -235,10 +236,22 @@ This is an email
 
     #[test]
     fn test_parse_content_type_header() {
-        assert_eq!(parse_content_type_header("text/html").unwrap(), mime::TEXT_HTML);
-        assert_eq!(parse_content_type_header("text/html; garbage").unwrap(), mime::TEXT_HTML);
+        assert_eq!(
+            parse_content_type_header("text/html").unwrap(),
+            mime::TEXT_HTML
+        );
+        assert_eq!(
+            parse_content_type_header("text/html; garbage").unwrap(),
+            mime::TEXT_HTML
+        );
         assert_eq!(parse_content_type_header("text").unwrap(), mime::TEXT_PLAIN);
-        let multipart = parse_content_type_header(r#"multipart/alternative; boundary="--_NmP-d4c3c3eca06b99af-Part_1""#).unwrap();
-        assert_eq!(multipart.get_param(mime::BOUNDARY).unwrap(), "--_NmP-d4c3c3eca06b99af-Part_1");
+        let multipart = parse_content_type_header(
+            r#"multipart/alternative; boundary="--_NmP-d4c3c3eca06b99af-Part_1""#,
+        )
+        .unwrap();
+        assert_eq!(
+            multipart.get_param(mime::BOUNDARY).unwrap(),
+            "--_NmP-d4c3c3eca06b99af-Part_1"
+        );
     }
 }

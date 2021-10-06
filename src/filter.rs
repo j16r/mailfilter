@@ -130,9 +130,7 @@ impl Matcher {
             && headers
                 .iter()
                 .filter(|header| -> bool { self.key.is_header(&header) })
-                .any(|header| -> bool {
-                    self.value_matcher.matches(&*header.value())
-                })
+                .any(|header| -> bool { self.value_matcher.matches(&*header.value()) })
     }
 }
 
@@ -316,8 +314,7 @@ mod test {
 
     #[test]
     fn test_example() {
-        let (_, program) =
-            parse("subject=~/check off$/ or body=~/body/").unwrap();
+        let (_, program) = parse("subject=~/check off$/ or body=~/body/").unwrap();
         let envelope = Mail::parse(
             r#"From 1@mail Fri Jun 05 23:22:35 +0000 2020
 From: A Person <me@readme.com>
@@ -345,7 +342,7 @@ Content-Transfer-Encoding: quoted-printable
 
     #[test]
     fn test_empty_program_returns_all_envelopes() {
-        let program = Filter{expression: None};
+        let program = Filter { expression: None };
         let envelope = Mail::parse(
             r#"From 1@mail Fri Jun 05 23:22:35 +0000 2020
 From: One <1@mail>
