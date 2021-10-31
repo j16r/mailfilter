@@ -126,13 +126,14 @@ checksum = "dd8f7255a17a627354f321ef0055d63b898c6fb27eff628af4d1b66b7331edf6"
 [[package]]
 name = "mailbox"
 version = "0.2.0"
+source = "git+https://github.com/j16r/rust-mailbox.git#8c9691b262c21b26fbea7819385d23445fb9fa49"
 dependencies = [
  "bitflags",
  "casing",
  "chrono",
  "fnv",
  "mime",
- "nom",
+ "nom 7.0.0",
  "owning_ref",
 ]
 
@@ -144,7 +145,7 @@ dependencies = [
  "clap",
  "mailbox",
  "mime",
- "nom",
+ "nom 5.1.2",
  "regex",
  "regex-syntax",
  "thiserror",
@@ -164,6 +165,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2a60c7ce501c71e03a9c9c0d35b861413ae925bd979cc7a4e30d060069aaac8d"
 
 [[package]]
+name = "minimal-lexical"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9c64630dcdd71f1a64c435f54885086a0de5d6a12d104d69b165fb7d5286d677"
+
+[[package]]
 name = "nom"
 version = "5.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -171,6 +178,17 @@ checksum = "ffb4262d26ed83a1c0a33a38fe2bb15797329c85770da05e6b828ddb782627af"
 dependencies = [
  "lexical-core",
  "memchr",
+ "version_check",
+]
+
+[[package]]
+name = "nom"
+version = "7.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ffd9d26838a953b4af82cbeb9f1592c6798916983959be223a7124e992742c1"
+dependencies = [
+ "memchr",
+ "minimal-lexical",
  "version_check",
 ]
 
@@ -370,5 +388,5 @@ version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ee21bd8eb202ef73ba0b0de5aff381f9798c4624d16e552c69446164fc07b14"
 dependencies = [
- "nom",
+ "nom 5.1.2",
 ]
