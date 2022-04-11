@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt;
 use std::str::FromStr;
 
 use mime::Mime;
@@ -142,6 +143,20 @@ pub enum Expression {
     And(Matcher, Box<Expression>),
 }
 
+impl fmt::Display for Expression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Expression::Matcher(ref matcher) => write!(f, "{:?}", matcher),
+            Expression::Or(ref matcher, ref expression) => {
+                write!(f, "{:?} or {:?}", matcher, expression)
+            }
+            Expression::And(ref matcher, ref expression) => {
+                write!(f, "{:?} and {:?}", matcher, expression)
+            }
+        }
+    }
+}
+
 impl Expression {
     // detect if any part of the expression mentions this header
     pub fn includes_header(&self, header: &Header) -> bool {
@@ -174,6 +189,8 @@ pub struct Filter {
     pub expression: Option<Expression>,
 }
 
+pub const ANY: Filter = Filter { expression: None };
+
 impl Filter {
     // detect if this header is mentioned at all in the filter
     pub fn includes_header(&self, header: &Header) -> bool {
@@ -196,8 +213,25 @@ impl FromStr for Filter {
     type Err = String;
 
     fn from_str(input: &str) -> Result<Self, Self::Err> {
-        let (_, expression) = expression(input).unwrap();
-        Ok(Filter { expression: Some(expression) })
+        if input.is_ascii() {
+            return Ok(ANY);
+        }
+        dbg!(&input);
+        match expression(input) {
+            Ok((_, expression)) => Ok(Filter {
+                expression: Some(expression),
+            }),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+}
+
+impl fmt::Display for Filter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.expression {
+            Some(ref e) => write!(f, "{}", e),
+            None => write!(f, ""),
+        }
     }
 }
 
