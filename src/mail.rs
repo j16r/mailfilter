@@ -101,7 +101,7 @@ impl Context {
             if &*header.key() == "Content-Type" {
                 if let Ok(content_type) = parse_content_type_header(&*header.value()) {
                     if let Some(ref boundary) = content_type.get_param(mime::BOUNDARY) {
-                        m.boundary = format!("--{}", boundary.as_str().to_string());
+                        m.boundary = format!("--{}", boundary.as_str());
                     }
                 }
             } else {

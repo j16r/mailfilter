@@ -80,7 +80,11 @@ fn main() {
     }
 }
 
-fn iterate(path: &str, filter: &Filter, mut process: impl FnMut(&Mail)) -> Result<(), std::io::Error> {
+fn iterate(
+    path: &str,
+    filter: &Filter,
+    mut process: impl FnMut(&Mail),
+) -> Result<(), std::io::Error> {
     let mut ctx = Context::new();
 
     for entry in mailbox::stream::entries(File::open(path)?) {
