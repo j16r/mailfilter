@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::str::FromStr;
 
 use mime::Mime;
 use nom::branch::alt;
@@ -191,6 +192,16 @@ impl Filter {
     }
 }
 
+impl FromStr for Filter {
+    type Err = String;
+
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        let (_, expression) = expression(input).unwrap();
+        Ok(Filter { expression: Some(expression) })
+    }
+}
+
+#[cfg(test)]
 pub fn parse(input: &str) -> IResult<&str, Filter> {
     let (input, expression) = expression(input)?;
     Ok((

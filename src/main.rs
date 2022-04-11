@@ -14,7 +14,7 @@ use std::borrow::Cow;
 use std::fs::File;
 use std::io::Write;
 
-use clap::{App, Arg, SubCommand};
+use clap::{Subcommand, Parser};
 use mailbox::stream::entry::Header;
 use mailbox::stream::Entry;
 use regex::Regex;
@@ -22,61 +22,40 @@ use regex::Regex;
 use filter::Filter;
 use mail::{Context, Mail};
 
+#[derive(Parser)]
+#[clap(version, about, long_about = None)]
+#[clap(propagate_version = true)]
+struct Cli {
+    #[clap(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    Count {
+        file: String,
+        #[clap(parse(try_from_str))]
+        filter: Filter,
+    },
+    Extract {
+        file: String,
+        #[clap(parse(try_from_str))]
+        filter: Filter,
+    },
+}
+
 fn main() {
-    let matches = App::new("Mailfilter")
-        .about("Process mbox format files")
-        .subcommand(
-            SubCommand::with_name("extract")
-                .about("Extract individual messages")
-                .arg(Arg::with_name("file").takes_value(true).required(true))
-                .arg(Arg::with_name("filter").takes_value(true)),
-        )
-        .subcommand(
-            SubCommand::with_name("count")
-                .about("Count how many messages match")
-                .arg(Arg::with_name("file").takes_value(true).required(true))
-                .arg(Arg::with_name("filter").takes_value(true)),
-        )
-        .get_matches();
-
-    if let Some(command) = matches.subcommand_matches("extract") {
-        if let Some(path) = command.value_of("file") {
-            eprint!("Extracting envelopes...\nInput:\t{}", path);
-
-            let filter = match command.value_of("filter") {
-                Some(filter) => {
-                    eprintln!("\nFilter:\t{}", filter);
-                    filter::parse(filter).unwrap().1
-                }
-                _ => Filter { expression: None },
-            };
-
-            eprintln!();
-
-            if let Err(e) = extract(path, &filter) {
+    match &Cli::parse().command {
+        Commands::Count { file, filter } => {
+            if let Err(e) = count(file, &filter) {
                 eprintln!("{:?}", e);
             }
-        } else {
-            eprintln!("No file specified");
-        }
-    } else if let Some(command) = matches.subcommand_matches("count") {
-        if let Some(path) = command.value_of("file") {
-            let filter = match command.value_of("filter") {
-                Some(filter) => {
-                    eprintln!("\nFilter:\t{}", filter);
-                    filter::parse(filter).unwrap().1
-                }
-                _ => Filter { expression: None },
-            };
-
-            if let Err(e) = count(path, &filter) {
+        },
+        Commands::Extract { file, filter } => {
+            if let Err(e) = extract(file, &filter) {
                 eprintln!("{:?}", e);
             }
-        } else {
-            eprintln!("No file specified");
         }
-    } else {
-        eprintln!("No command specified");
     }
 }
 

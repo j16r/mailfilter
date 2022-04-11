@@ -6,7 +6,7 @@ edition = "2021"
 
 [dependencies]
 chrono = "0.4"
-clap = "2.33"
+clap = { version = "3", features = ["derive"] }
 mailbox = { version = "*", git = "https://github.com/j16r/rust-mailbox.git" }
 mime = "0.3"
 nom = "5.0"
