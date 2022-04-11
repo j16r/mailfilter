@@ -31,7 +31,12 @@ fn main() {
                 .arg(Arg::with_name("file").takes_value(true).required(true))
                 .arg(Arg::with_name("filter").takes_value(true)),
         )
-        .subcommand(SubCommand::with_name("count").about("Count how many messages match"))
+        .subcommand(
+            SubCommand::with_name("count")
+                .about("Count how many messages match")
+                .arg(Arg::with_name("file").takes_value(true).required(true))
+                .arg(Arg::with_name("filter").takes_value(true)),
+        )
         .get_matches();
 
     if let Some(command) = matches.subcommand_matches("extract") {
@@ -54,12 +59,28 @@ fn main() {
         } else {
             eprintln!("No file specified");
         }
+    } else if let Some(command) = matches.subcommand_matches("count") {
+        if let Some(path) = command.value_of("file") {
+            let filter = match command.value_of("filter") {
+                Some(filter) => {
+                    eprintln!("\nFilter:\t{}", filter);
+                    filter::parse(filter).unwrap().1
+                }
+                _ => Filter { expression: None },
+            };
+
+            if let Err(e) = count(path, &filter) {
+                eprintln!("{:?}", e);
+            }
+        } else {
+            eprintln!("No file specified");
+        }
     } else {
         eprintln!("No command specified");
     }
 }
 
-fn extract(path: &str, filter: &Filter) -> Result<(), std::io::Error> {
+fn iterate(path: &str, filter: &Filter, mut process: impl FnMut(&Mail)) -> Result<(), std::io::Error> {
     let mut ctx = Context::new();
 
     for entry in mailbox::stream::entries(File::open(path)?) {
@@ -74,23 +95,40 @@ fn extract(path: &str, filter: &Filter) -> Result<(), std::io::Error> {
                 ctx.body(&body);
             }
             Ok(Entry::End) => {
-                if let Some(ref m) = ctx.end() {
+                if let Some(ref mut m) = ctx.end() {
                     if filter.matches(m) {
-                        let date = m.date();
-                        let subject = m.subject();
-                        let base_name = format!("{}-{}", date, subject);
-                        let name = envelope_filename(&base_name);
-                        let path = format!("{}.txt", &name);
-                        eprintln!("Saving email to {}", path);
-                        let mut file = File::create(&path).unwrap();
-                        let body_text = m.body_text();
-                        file.write_all(&body_text.into_bytes()).unwrap();
+                        process(m);
                     }
                 }
             }
             _ => {}
         }
     }
+
+    Ok(())
+}
+
+fn count(path: &str, filter: &Filter) -> Result<(), std::io::Error> {
+    let mut count = 0;
+    iterate(path, filter, |_| {
+        count += 1;
+    })?;
+    eprintln!("Matching entries: {}", count);
+    Ok(())
+}
+
+fn extract(path: &str, filter: &Filter) -> Result<(), std::io::Error> {
+    iterate(path, filter, |m| {
+        let date = m.date();
+        let subject = m.subject();
+        let base_name = format!("{}-{}", date, subject);
+        let name = envelope_filename(&base_name);
+        let path = format!("{}.txt", &name);
+        eprintln!("Saving email to {}", path);
+        let mut file = File::create(&path).unwrap();
+        let body_text = m.body_text();
+        file.write_all(&body_text.into_bytes()).unwrap();
+    })?;
 
     Ok(())
 }
